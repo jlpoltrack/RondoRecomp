@@ -40,8 +40,8 @@ if(NOT WIN32)
   target_link_libraries(pce PUBLIC m)   # pow, fmod (Windows has them in its C library)
 endif()
 
-add_executable(rondo_headless tools/headless/main.c runtime/recomp/recomp_none.c tools/frontend/game.c tools/frontend/prompt.c
-  tools/frontend/moves.c)
+add_executable(rondo_headless tools/headless/main.c tools/headless/wide_audit.c runtime/recomp/recomp_none.c tools/frontend/game.c
+  tools/frontend/prompt.c tools/frontend/moves.c tools/frontend/wide.c)
 target_link_libraries(rondo_headless PRIVATE pce)
 
 # Code generator (developer front end; Setup links the same generator)
@@ -57,7 +57,8 @@ if(RONDO_GEN_DIR AND EXISTS "${RONDO_GEN_DIR}/table.c")
   add_library(rondogen STATIC ${RONDO_GEN_SOURCES})
   target_include_directories(rondogen PUBLIC runtime "${RONDO_GEN_DIR}")
   target_compile_options(rondogen PRIVATE -O1 -w)
-  add_executable(rondo_headless_rc tools/headless/main.c tools/frontend/game.c tools/frontend/prompt.c tools/frontend/moves.c)
+  add_executable(rondo_headless_rc tools/headless/main.c tools/headless/wide_audit.c tools/frontend/game.c tools/frontend/prompt.c
+    tools/frontend/moves.c tools/frontend/wide.c)
   target_link_libraries(rondo_headless_rc PRIVATE pce rondogen)
 endif()
 
@@ -79,7 +80,7 @@ if(SDL3_INCLUDE_DIR AND SDL3_LIBRARY)
   add_executable(rondo WIN32 tools/frontend/main.c tools/frontend/locate.c tools/frontend/game.c tools/frontend/prompt.c tools/frontend/moves.c
     tools/frontend/input.c tools/frontend/binds.c tools/frontend/menu.c tools/frontend/settings.c tools/frontend/video.c tools/frontend/theme.c tools/frontend/ui_fonts.c
     tools/frontend/http.c tools/frontend/achievements.c tools/frontend/update.c tools/frontend/child.c
-    tools/frontend/showcase.c runtime/recomp/recomp_none.c)
+    tools/frontend/showcase.c tools/frontend/wide.c runtime/recomp/recomp_none.c)
   target_include_directories(rondo PRIVATE ${SDL3_INCLUDE_DIR} tools/recomp)
   target_link_libraries(rondo PRIVATE pce rcheevos ${SDL3_LIBRARY})
   if(WIN32)
@@ -185,3 +186,8 @@ target_link_libraries(chd_test PRIVATE pce)
 add_executable(state_test tests/state_test.c runtime/recomp/recomp_none.c)
 target_include_directories(state_test PRIVATE tools)
 target_link_libraries(state_test PRIVATE pce)
+
+# needs the disc: build/wide_test <game.cue>
+add_executable(wide_test tests/wide_test.c tools/frontend/wide.c tools/frontend/game.c runtime/recomp/recomp_none.c)
+target_include_directories(wide_test PRIVATE tools)
+target_link_libraries(wide_test PRIVATE pce)

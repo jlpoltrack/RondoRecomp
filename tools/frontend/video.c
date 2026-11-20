@@ -31,13 +31,22 @@ void video_free(Video *v)
     SDL_zerop(v);
 }
 
-void video_upload(Video *v, const uint32_t *fb, int w, int h, int pitch)
+void video_upload(Video *v, const uint32_t *fb, int w, int h, int pitch, int side, int left, int right)
 {
     if (w <= 0 || h <= 0) return;
     SDL_Rect r = {0, 0, w, h};
     SDL_UpdateTexture(v->frame, &r, fb, pitch * 4);
     v->src_w = w;
     v->src_h = h;
+    v->side = side;
+    v->side_l = left < 0 ? 0 : left > side ? side : left;
+    v->side_r = right < 0 ? 0 : right > side ? side : right;
+}
+
+double video_picture_aspect(const Settings *s, int fb_h)
+{
+    if (s->aspect == ASPECT_STRETCH) return 0;
+    return s->aspect == ASPECT_SQUARE ? 256.0 / (fb_h > 0 ? fb_h : 224) : 4.0 / 3.0;
 }
 
 /* Where the picture goes in a ww x wh window. */
@@ -45,8 +54,8 @@ static SDL_FRect place(const Video *v, const Settings *s, int ww, int wh)
 {
     float sw = (float)v->src_w, sh = (float)v->src_h;
     if (s->aspect == ASPECT_STRETCH) return (SDL_FRect){0, 0, (float)ww, (float)wh};
-    /* aspect of the picture: a TV's 4:3, or square pixels */
-    float ar = s->aspect == ASPECT_SQUARE ? sw / sh : 4.0f / 3.0f;
+    /* aspect of the picture: a TV's 4:3, or square pixels; widescreen sides at the same shape */
+    float ar = s->aspect == ASPECT_SQUARE ? sw / sh : 4.0f / 3.0f * sw / (sw - 2.0f * (float)v->side);
     float dh = (float)wh, dw = dh * ar;
     if (dw > (float)ww) { dw = (float)ww; dh = dw / ar; }
     if (s->scaling == SCALE_WHOLE) {
@@ -80,6 +89,8 @@ static SDL_Texture *sharp_copy(Video *v, float dw, float dh)
     }
     SDL_SetTextureScaleMode(v->frame, SDL_SCALEMODE_NEAREST);
     SDL_SetRenderTarget(v->ren, v->sharp);
+    SDL_SetRenderDrawColor(v->ren, 0, 0, 0, 0);   /* widescreen's empty columns stay empty */
+    SDL_RenderClear(v->ren);
     SDL_FRect src = {0, 0, (float)v->src_w, (float)v->src_h};
     SDL_RenderTexture(v->ren, v->frame, &src, NULL);
     SDL_SetRenderTarget(v->ren, NULL);
@@ -228,8 +239,7 @@ static SDL_Texture *vignette(Video *v)
 }
 
 /* `tex` over dst at `alpha`, on curved glass: a mesh whose sides bow outward (x scaled by
- * 1 - k y^2, y by 1 - k x^2, from the middle); k = 0 is flat. (Geometry takes its alpha from
- * the vertices, not the texture's alpha mod.) */
+ * 1 - k y^2, y by 1 - k x^2, from the middle); k = 0 is flat. Mesh alpha is per vertex. */
 static void draw_on_glass(SDL_Renderer *ren, SDL_Texture *tex, SDL_FRect dst, float k, float alpha)
 {
     if (k <= 0) {
@@ -284,16 +294,24 @@ static bool draw_effect(Video *v, const Settings *s, SDL_FRect dst)
         v->fx = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, tw, th);
         if (!v->fx) return false;
         SDL_SetTextureScaleMode(v->fx, SDL_SCALEMODE_LINEAR);
-        SDL_SetTextureBlendMode(v->fx, SDL_BLENDMODE_NONE);
+        SDL_SetTextureBlendMode(v->fx, SDL_BLENDMODE_BLEND_PREMULTIPLIED);
         v->fx_w = tw;
         v->fx_h = th;
     }
     SDL_FRect part, all = {0, 0, (float)tw, (float)th};
     SDL_Texture *pic = picture(v, s, dst.w, dst.h, &part);   /* (may draw into v->sharp first) */
+    /* the glass, curve and mask are dst's; only the columns drawn this frame show (widescreen's
+     * empty ones show the fill) */
+    float col_w = dst.w / (float)v->src_w;
+    float cut_l = (float)(v->side - v->side_l) * col_w, cut_r = (float)(v->side - v->side_r) * col_w;
+    SDL_FRect glass = {dst.x + cut_l, dst.y, dst.w - cut_l - cut_r, dst.h};
+    int cx = (int)SDL_floorf(glass.x), cy = (int)SDL_floorf(glass.y);
+    SDL_Rect clip = {cx, cy, (int)SDL_ceilf(glass.x + glass.w) - cx, (int)SDL_ceilf(glass.y + glass.h) - cy};
 
-    /* the picture at its size on screen, softened, brightened, with scanlines */
+    /* the picture at its size on screen, softened, brightened, with scanlines; clear around
+     * it, premultiplied */
     SDL_SetRenderTarget(ren, v->fx);
-    SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+    SDL_SetRenderDrawColor(ren, 0, 0, 0, 0);
     SDL_RenderClear(ren);
     draw_as(ren, pic, &part, &all, SDL_BLENDMODE_BLEND, 1.0f);
     if (l.soft) {
@@ -312,11 +330,12 @@ static bool draw_effect(Video *v, const Settings *s, SDL_FRect dst)
     if (scan) SDL_RenderTexture(ren, scan, NULL, &all);
     SDL_SetRenderTarget(ren, NULL);
 
-    /* on the screen */
+    /* on the screen, anchored to dst so nothing moves while the sides glide */
     if (l.curve > 0) {
         SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
-        SDL_RenderFillRect(ren, &dst);
+        SDL_RenderFillRect(ren, &glass);
     }
+    SDL_SetRenderClipRect(ren, &clip);
     draw_on_glass(ren, v->fx, dst, l.curve, 1.0f);
     SDL_Texture *mask = l.mask > 0 ? phosphors(v, l.mask) : NULL;
     if (mask) SDL_RenderTextureTiled(ren, mask, NULL, dst.h >= 1600 ? 2.0f : 1.0f, &dst);
@@ -328,9 +347,12 @@ static bool draw_effect(Video *v, const Settings *s, SDL_FRect dst)
         if (v->glow && v->blur_a) {
             SDL_FRect src = {0, 0, (float)v->src_w, (float)v->src_h};
             SDL_SetTextureScaleMode(v->frame, SDL_SCALEMODE_LINEAR);
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 0);   /* widescreen's empty columns add nothing */
             SDL_SetRenderTarget(ren, v->glow);
+            SDL_RenderClear(ren);
             SDL_RenderTexture(ren, v->frame, &src, NULL);
             SDL_SetRenderTarget(ren, v->blur_a);
+            SDL_RenderClear(ren);
             SDL_RenderTexture(ren, v->glow, NULL, NULL);
             SDL_SetRenderTarget(ren, NULL);
             SDL_Texture *g[2] = {v->glow, v->blur_a};
@@ -344,6 +366,7 @@ static bool draw_effect(Video *v, const Settings *s, SDL_FRect dst)
     }
     SDL_Texture *vig = l.vignette > 0 ? vignette(v) : NULL;
     if (vig) draw_on_glass(ren, vig, dst, l.curve, l.vignette);
+    SDL_SetRenderClipRect(ren, NULL);
     return true;
 }
 
@@ -353,13 +376,14 @@ SDL_FRect video_draw(Video *v, const Settings *s)
     int ww, wh;
     SDL_GetRenderOutputSize(ren, &ww, &wh);
     SDL_FRect dst = place(v, s, ww, wh);
-    SDL_FRect src = {0, 0, (float)v->src_w, (float)v->src_h};
+    /* the game's own picture, without widescreen's sides */
+    SDL_FRect src = {(float)v->side, 0, (float)(v->src_w - 2 * v->side), (float)v->src_h};
 
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
     SDL_RenderClear(ren);
 
     /* the sides of a wide screen: the picture itself, blurred and dimmed */
-    bool covers = dst.x <= 0 && dst.y <= 0 && dst.w >= (float)ww && dst.h >= (float)wh;
+    bool covers = !v->side && dst.x <= 0 && dst.y <= 0 && dst.w >= (float)ww && dst.h >= (float)wh;
     if (s->sides == SIDES_BLUR && !covers && v->blur_a && v->blur_b) {
         SDL_SetTextureScaleMode(v->frame, SDL_SCALEMODE_LINEAR);
         SDL_SetRenderTarget(ren, v->blur_a);
@@ -368,7 +392,7 @@ SDL_FRect video_draw(Video *v, const Settings *s)
         SDL_RenderTexture(ren, v->blur_a, NULL, NULL);
         SDL_SetRenderTarget(ren, NULL);
         /* cover the window keeping the picture's shape, overflowing at the edges */
-        float ar = dst.w / dst.h;
+        float ar = dst.w * src.w / (float)v->src_w / dst.h;
         float bw = (float)ww, bh = bw / ar;
         if (bh < (float)wh) { bh = (float)wh; bw = bh * ar; }
         SDL_FRect bg = {((float)ww - bw) / 2, ((float)wh - bh) / 2, bw, bh};

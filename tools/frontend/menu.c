@@ -79,6 +79,7 @@ static const Item START_ITEMS[] = {
 static const Item VIDEO_ITEMS[] = {
     TOGGLE("Fullscreen", fullscreen, MENU_VIDEO_CHANGED),
     TOGGLE("VSync", vsync, MENU_VIDEO_CHANGED),
+    TOGGLE("Widescreen (experimental)", widescreen, MENU_SETTINGS_CHANGED),
     CHOICE("Aspect ratio", aspect, ASPECTS, 0, MENU_SETTINGS_CHANGED),
     CHOICE("Size", scaling, SCALINGS, 0, MENU_SETTINGS_CHANGED),
     CHOICE("Filter", filter, FILTERS, 0, MENU_SETTINGS_CHANGED),
@@ -183,6 +184,7 @@ static const struct { const char *label, *help; } HELP[] = {
     {"Start screen", "Leave the game for the start screen."},
     {"Fullscreen", "Use the whole screen at its own resolution (F11)."},
     {"VSync", "Show each frame when the screen refreshes: no tearing. Off: at once, maybe torn."},
+    {"Widescreen (experimental)", "Some rooms fill a wide screen, as far as their walls. Only drawn: the game is unchanged. Not with Stretch."},
     {"Aspect ratio", "4:3 as on a TV, square pixels, or stretched to fill."},
     {"Size", "As big as the screen allows, or whole multiples only."},
     {"Filter", "Sharp: crisp, even pixels. Nearest: raw. Smooth: softened."},

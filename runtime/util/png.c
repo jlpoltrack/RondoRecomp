@@ -38,10 +38,11 @@ static void chunk(FILE *f, const char *type, const uint8_t *data, uint32_t len)
     fwrite(h, 1, 4, f);
 }
 
-bool png_write_argb(const char *path, const uint32_t *px, int w, int h, int stride)
+static bool write_png(const char *path, const uint32_t *px, int w, int h, int stride, bool alpha)
 {
     crc_init();
-    size_t raw_len = (size_t)h * (size_t)(w * 3 + 1);
+    int ch = alpha ? 4 : 3;
+    size_t raw_len = (size_t)h * (size_t)(w * ch + 1);
     uint8_t *raw = malloc(raw_len);
     if (!raw) return false;
     uint8_t *r = raw;
@@ -52,6 +53,7 @@ bool png_write_argb(const char *path, const uint32_t *px, int w, int h, int stri
             *r++ = (uint8_t)(c >> 16);
             *r++ = (uint8_t)(c >> 8);
             *r++ = (uint8_t)c;
+            if (alpha) *r++ = (uint8_t)(c >> 24);
         }
     }
     size_t blocks = (raw_len + 65534) / 65535;
@@ -83,7 +85,7 @@ bool png_write_argb(const char *path, const uint32_t *px, int w, int h, int stri
     uint8_t ihdr[13];
     be32(ihdr, (uint32_t)w);
     be32(ihdr + 4, (uint32_t)h);
-    ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+    ihdr[8] = 8; ihdr[9] = alpha ? 6 : 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
     chunk(f, "IHDR", ihdr, 13);
     chunk(f, "IDAT", z, (uint32_t)(o - z));
     chunk(f, "IEND", NULL, 0);
@@ -91,4 +93,14 @@ bool png_write_argb(const char *path, const uint32_t *px, int w, int h, int stri
     free(raw);
     free(z);
     return true;
+}
+
+bool png_write_argb(const char *path, const uint32_t *px, int w, int h, int stride)
+{
+    return write_png(path, px, w, h, stride, false);
+}
+
+bool png_write_argb_alpha(const char *path, const uint32_t *px, int w, int h, int stride)
+{
+    return write_png(path, px, w, h, stride, true);
 }

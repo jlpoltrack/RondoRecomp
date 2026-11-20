@@ -3,15 +3,6 @@
 
 #include <string.h>
 
-
-/* VDC register numbers */
-enum {
-    R_MAWR = 0x00, R_MARR = 0x01, R_VWR = 0x02, R_CR = 0x05, R_RCR = 0x06,
-    R_BXR = 0x07, R_BYR = 0x08, R_MWR = 0x09, R_HSR = 0x0A, R_HDR = 0x0B,
-    R_VSR = 0x0C, R_VDR = 0x0D, R_VCR = 0x0E, R_DCR = 0x0F, R_SOUR = 0x10,
-    R_DESR = 0x11, R_LENR = 0x12, R_DVSSR = 0x13,
-};
-
 /* ---- VCE ----------------------------------------------------------------- */
 
 static void vce_update(Vce *v, int i)
@@ -202,6 +193,9 @@ void vdc_line_start(Vdc *d, int line)
         raise(d, VDC_ST_RR, (d->reg[R_CR] & 0x04) != 0);
 }
 
+static void side_latch(void);
+static void render_side(Vdc *d, const Vce *vce, int row, int y);
+
 void vdc_vblank(Vdc *d)
 {
     /* After the line's raster compare, as on the console: a game reads the status once per
@@ -211,6 +205,7 @@ void vdc_vblank(Vdc *d)
         uint16_t src = d->reg[R_DVSSR];
         for (int i = 0; i < 256; i++) d->satb[i] = d->vram[(src + i) & 0x7FFF];
         d->satb_pending = false;
+        side_latch();
         raise(d, VDC_ST_DS, (dcr & 0x01) != 0);
     }
     raise(d, VDC_ST_VD, (d->reg[R_CR] & 0x08) != 0);
@@ -223,18 +218,26 @@ const uint16_t *vdc_row_scroll(void) { return row_scroll; }
 static uint64_t sprite_hide;
 void vdc_set_sprite_hide(uint64_t mask) { sprite_hide = mask; }
 
-static void render_bg(Vdc *d, int y, int w, uint16_t *out)
+static uint16_t row_y[PCE_FB_MAX_H];
+const uint16_t *vdc_row_y(void) { return row_y; }
+
+int vdc_map_w(const Vdc *d)
 {
     static const int map_w[4] = {32, 64, 128, 128};
-    uint16_t mwr = d->reg[R_MWR];
-    int mw = map_w[(mwr >> 4) & 3];
-    int mh = (mwr & 0x40) ? 64 : 32;
+    return map_w[(d->reg[R_MWR] >> 4) & 3];
+}
+
+/* Background pixels x0..x0+w-1 of line y. */
+static void render_bg(const Vdc *d, int y, int x0, int w, uint16_t *out)
+{
+    int mw = vdc_map_w(d);
+    int mh = (d->reg[R_MWR] & 0x40) ? 64 : 32;
     int py = y & (mh * 8 - 1);
     int row = py & 7;
     int sx = d->reg[R_BXR] & 0x3FF;
     const uint16_t *map = &d->vram[(py >> 3) * mw];
     for (int x = 0; x < w; x++) {
-        int px = (sx + x) & (mw * 8 - 1);
+        int px = (sx + x0 + x) & (mw * 8 - 1);
         uint16_t e = map[px >> 3];
         uint32_t base = ((uint32_t)(e & 0x7FF) * 16 + row) & 0x7FFF;
         uint16_t p01 = d->vram[base], p23 = d->vram[(base + 8) & 0x7FFF];
@@ -245,25 +248,28 @@ static void render_bg(Vdc *d, int y, int w, uint16_t *out)
     }
 }
 
-/* out: 0 = none, else 0x100 | palette<<4 | color, bit 15 = in front of BG. */
-static void render_sprites(Vdc *d, int y, int w, uint16_t *out)
+/* Sprites of table `sat` (X moved by dx) over x0..x0+w-1 of row y. out: 0 = none, else
+ * 0x100 | palette<<4 | color, bit 15 = in front of BG. `real`: the game's own table, with the
+ * 16 a line, sprite 0's collision and sprite_hide; else none of them (widescreen's sides). */
+static void render_sprites(Vdc *d, const uint16_t *sat, int dx, int y, int x0, int w, uint16_t *out, bool real)
 {
     int count = 0;
     bool spr0_drawn[PCE_FB_MAX_W];
     memset(spr0_drawn, 0, sizeof spr0_drawn);
     for (int i = 0; i < 64; i++) {
-        const uint16_t *s = &d->satb[i * 4];
+        const uint16_t *s = &sat[i * 4];
         int sy = (s[0] & 0x3FF) - 64;
         uint16_t attr = s[3];
         int cgy = (attr >> 12) & 3;
         int h = cgy == 0 ? 16 : cgy == 1 ? 32 : 64;
         if (y < sy || y >= sy + h) continue;
-        if (++count > 16) {   /* the hardware shows 16 sprites per line */
+        if (real && ++count > 16) {   /* the hardware shows 16 sprites per line */
             raise(d, VDC_ST_OR, (d->reg[R_CR] & 0x02) != 0);
             break;
         }
         int sw = (attr & 0x0100) ? 32 : 16;
-        int sx = (s[1] & 0x3FF) - 32;
+        int sx = (s[1] & 0x3FF) - 32 + dx - x0;
+        if (sx + sw <= 0 || sx >= w) continue;
         int pattern = (s[2] >> 1) & 0x3FF;
         if (sw == 32) pattern &= ~1;
         if (h == 32) pattern &= ~2;
@@ -273,7 +279,7 @@ static void render_sprites(Vdc *d, int y, int w, uint16_t *out)
         bool xflip = (attr & 0x0800) != 0;
         uint16_t pal = (uint16_t)(0x100 | (attr & 0xF) << 4);
         uint16_t front = (attr & 0x80) ? 0x8000 : 0;
-        bool hidden = (sprite_hide >> i) & 1;
+        bool hidden = real && ((sprite_hide >> i) & 1);
         for (int c = 0; c < sw; c++) {
             int x = sx + c;
             if (x < 0 || x >= w) continue;
@@ -285,8 +291,8 @@ static void render_sprites(Vdc *d, int y, int w, uint16_t *out)
                       ((d->vram[(a + 32) & 0x7FFF] >> bit) & 1) << 2 |
                       ((d->vram[(a + 48) & 0x7FFF] >> bit) & 1) << 3;
             if (!col) continue;
-            if (i == 0) spr0_drawn[x] = true;
-            else if (spr0_drawn[x]) raise(d, VDC_ST_CR, (d->reg[R_CR] & 0x01) != 0);
+            if (real && i == 0) spr0_drawn[x] = true;
+            else if (real && spr0_drawn[x]) raise(d, VDC_ST_CR, (d->reg[R_CR] & 0x01) != 0);
             if (!out[x] && !hidden) out[x] = (uint16_t)(front | pal | col);
         }
     }
@@ -313,8 +319,9 @@ void vdc_line_end(Vdc *d, const Vce *vce, int line)
     memset(sp, 0, sizeof sp);
     uint16_t cr = d->reg[R_CR];
     row_scroll[row] = d->reg[R_BXR] & 0x3FF;
-    if (cr & 0x80) render_bg(d, y, w, bg);
-    if (cr & 0x40) render_sprites(d, row, w, sp);
+    row_y[row] = (uint16_t)y;
+    if (cr & 0x80) render_bg(d, y, 0, w, bg);
+    if (cr & 0x40) render_sprites(d, d->satb, 0, row, 0, w, sp, true);
 
     uint32_t *dst = &d->fb[row * PCE_FB_MAX_W];
     for (int x = 0; x < w; x++) {
@@ -322,5 +329,72 @@ void vdc_line_end(Vdc *d, const Vce *vce, int line)
         if (s && ((s & 0x8000) || !bg[x])) dst[x] = vce->argb[s & 0x1FF];
         else if (bg[x]) dst[x] = vce->argb[bg[x]];
         else dst[x] = vce->argb[0];
+    }
+    render_side(d, vce, row, y);
+}
+
+/* ---- widescreen side columns ----------------------------------------------------------- */
+
+static int side_l, side_r;
+static uint32_t side_px[PCE_FB_MAX_H * 2 * VDC_SIDE_MAX];
+static uint16_t side_sat[2][256], side_next[2][256];
+static int side_dx[2], side_next_dx[2];
+static bool side_has[2], side_next_has[2], side_new;
+
+void vdc_set_side(int left, int right)
+{
+    side_l = left < 0 ? 0 : left > VDC_SIDE_MAX ? VDC_SIDE_MAX : left;
+    side_r = right < 0 ? 0 : right > VDC_SIDE_MAX ? VDC_SIDE_MAX : right;
+}
+
+void vdc_set_side_sprites(const uint16_t *left, int left_dx, const uint16_t *right, int right_dx)
+{
+    const uint16_t *t[2] = {left, right};
+    int dx[2] = {left_dx, right_dx};
+    for (int i = 0; i < 2; i++) {
+        side_next_has[i] = t[i] != NULL;
+        if (t[i]) memcpy(side_next[i], t[i], sizeof side_next[i]);
+        side_next_dx[i] = dx[i];
+    }
+    side_new = true;
+}
+
+void vdc_drop_side_sprites(void)
+{
+    side_has[0] = side_has[1] = false;
+    side_next_has[0] = side_next_has[1] = false;
+    side_new = false;
+}
+
+static void side_latch(void)
+{
+    if (!side_new) return;
+    memcpy(side_sat, side_next, sizeof side_sat);
+    memcpy(side_dx, side_next_dx, sizeof side_dx);
+    memcpy(side_has, side_next_has, sizeof side_has);
+    side_new = false;
+}
+
+const uint32_t *vdc_side_pixels(void) { return side_px; }
+
+static void render_side(Vdc *d, const Vce *vce, int row, int y)
+{
+    uint32_t *dst = &side_px[row * 2 * VDC_SIDE_MAX];
+    memset(dst, 0, 2 * VDC_SIDE_MAX * sizeof *dst);
+    if (d->fb_w != 256) return;
+    uint16_t cr = d->reg[R_CR];
+    for (int k = 0; k < 2; k++) {
+        int w = k ? side_r : side_l, x0 = k ? 256 : -w;
+        if (!w) continue;
+        uint16_t bg[VDC_SIDE_MAX], sp[VDC_SIDE_MAX];
+        memset(bg, 0, sizeof bg);
+        memset(sp, 0, sizeof sp);
+        if (cr & 0x80) render_bg(d, y, x0, w, bg);
+        if ((cr & 0x40) && side_has[k]) render_sprites(d, side_sat[k], side_dx[k], row, x0, w, sp, false);
+        uint32_t *o = dst + (k ? VDC_SIDE_MAX : VDC_SIDE_MAX - w);
+        for (int x = 0; x < w; x++) {
+            uint16_t s = sp[x];
+            o[x] = vce->argb[s && ((s & 0x8000) || !bg[x]) ? s & 0x1FF : bg[x]];
+        }
     }
 }

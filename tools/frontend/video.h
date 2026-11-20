@@ -16,6 +16,8 @@ typedef struct Video {
     int sharp_w, sharp_h;
     SDL_Texture *blur_a, *blur_b;
     int src_w, src_h;
+    int side;                    /* columns each side of a widescreen picture (wide.h); 0: none */
+    int side_l, side_r;          /* of those, the columns drawn in this picture */
     /* screen effects */
     SDL_Texture *fx;             /* the picture at its size on screen, with scanlines */
     int fx_w, fx_h;
@@ -30,8 +32,11 @@ typedef struct Video {
 
 bool video_init(Video *v, SDL_Renderer *ren);
 void video_free(Video *v);
-/* Upload a new picture (ARGB8888, pitch in pixels). */
-void video_upload(Video *v, const uint32_t *fb, int w, int h, int pitch);
+/* Upload a new picture (ARGB8888, pitch in pixels). `side`: widescreen columns each side,
+ * `left`/`right` of them drawn; pixels with no alpha show the sides' fill. */
+void video_upload(Video *v, const uint32_t *fb, int w, int h, int pitch, int side, int left, int right);
+/* The shape (w/h) the game's own picture of `fb_h` rows is shown at; 0 when stretched. */
+double video_picture_aspect(const Settings *s, int fb_h);
 /* Clear and draw the picture for the current window size; returns where it went. */
 SDL_FRect video_draw(Video *v, const Settings *s);
 

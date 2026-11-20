@@ -203,9 +203,8 @@ down once it drops more than 12 times in a second, which damage and sub-weapons 
 
 ## Camera, scrolling and objects
 
-Found for widescreen (an option from 0.6 to 0.12, taken out in 0.13; tried again after 1.2
-with a camera that stops at the walls and taken out before 1.3: see git history for
-`tools/frontend/wide.c`).
+Found for widescreen (an option from 0.6 to 0.12, taken out in 0.13; now an experimental
+option drawn beside the game, `tools/frontend/wide.c`: docs/runtime.md, "Widescreen").
 
 - Scroll layers at $1E00+ (8 layers): X sub/low $1E00/$1E08, X page (mod 16) $1E96, Y
   $1E18/$1E20/$1E28, velocities (8.8) $1E7E/$1E86 (added each frame by 6F:A6F4), map page
@@ -236,9 +235,9 @@ with a camera that stops at the walls and taken out before 1.3: see git history 
   block's table read by 6B:8954 (`$9C71` in Stage 1's first area, `$9EAD` in its boss area).
   Leaving a room steps `$82` and takes `$83` from the route at `$9C20 + $82` (6B:866A); the
   route is filled in as the stage goes (Stage 1: rooms 0, 1, 2 by the main road; 2 is the
-  dead-trees room). Stage 1 is two areas: $10 (rooms 0-8) and $0E (the wyvern's wall, one
-  room). The next area comes from `$81` (the stage's step): `$6A:7230 + $81` going on,
-  `$7241 + ($81 & $7F)` with bit 7 set.
+  dead-trees room). Stage 1 is area $10 (rooms 0-8; $0E is Stage 2, below). The next area
+  comes from `$81` (the stage's step): `$6A:7230 + $81` going on, `$7241 + ($81 & $7F)` with
+  bit 7 set.
 - Going through a door the next room starts at the end of the camera's scroll with the
   picture on: its start (6F:A94C) steps the camera across the level for about 12 frames
   ($040, $0A0, ... $270 in Stage 1's dead-trees room) before `$31` returns to 01.
@@ -277,6 +276,13 @@ with a camera that stops at the walls and taken out before 1.3: see git history 
   band scrolls and the carriage drives in from the left. Its title shows with `$31` = 05
   (frames 16817-17008 of the capture run). The rain is one object (kind $26, slot $4F) moving
   24 px a frame and cycled around X 0-255, its drops (pattern $193) spread around it.
+- Starting any area (found for widescreen's checks, `tools/reach_stages.py`): during play, `$37`
+  non-zero asks for the area change (main state 06), which takes the next area from `$81` as
+  above; holding `$81` for its first ~12 frames picks it. With bit 7 set: 82 area $0E (titled
+  STAGE 2), 83 $12 (2'), 84 $02 (3), 85 $0C (3'), 86 $06
+  (4), 87 $16 (4'), 88 $1A and 89 $30 (5), 8C $22 (7), 8E $34 (the Final stage); 8A loads
+  nothing. Without it, 04-09 and 0E give areas $00, $08, $04, $14, $18, $28, $2C, untitled
+  halls with a boss gauge, and 0C gives $1C (7). `$31` = 04 is the restart after a death.
 - A boss's health gauge is an object fixed to the screen like the HUD: Stage 1's wyvern's is
   slot $55 (kind 0, type 5) at X 216. Stage titles use $54-$55 too, sliding in from X -104.
 - The sprite builder (72:8000) keeps the object slot it is drawing in zp `$D9`; pieces with

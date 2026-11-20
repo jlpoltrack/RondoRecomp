@@ -36,6 +36,7 @@
 #include "showcase.h"
 #include "theme.h"
 #include "video.h"
+#include "wide.h"
 #include "fit.h"
 #include "moves.h"
 #include "prompt.h"
@@ -157,6 +158,7 @@ static bool no_save_files;   /* test runs: fresh backup RAM, nothing written to 
 static TitlePrompt prompt;   /* the title's PUSH RUN BUTTON! as this PC's button (pad set per frame) */
 static Moves moves;          /* the Gameplay page's 8-way whip and limp whip (moves.h) */
 static MoveOptions move_opts;   /* this frame's: off in hardcore mode and the tests */
+static Wide wide;            /* widescreen: sides drawn beside the game (wide.h) */
 
 /* A frame of the game. While rewinding (`live` false) the moves only draw: the frame shown is
  * one already played. */
@@ -164,6 +166,7 @@ static void run_frame_as(bool live)
 {
     prompt_before_frame(&prompt, &pce);
     moves_before_frame(&moves, &pce, &move_opts, live);
+    wide_before_frame(&wide, &pce);
     pce_run_frame(&pce);
     prompt_after_frame(&prompt, &pce);
     moves_after_frame(&moves, &pce, &move_opts, live);
@@ -171,11 +174,21 @@ static void run_frame_as(bool live)
 
 static void run_frame(void) { run_frame_as(true); }
 
+/* the last picture to the screen, with widescreen's sides when it has them */
+static void upload_picture(Video *video)
+{
+    static uint32_t canvas[PCE_FB_MAX_H * (256 + 2 * VDC_SIDE_MAX)];
+    int w = wide_compose(&wide, &pce, canvas, 256 + 2 * VDC_SIDE_MAX);
+    if (w) video_upload(video, canvas, w, pce.vdc.fb_h, 256 + 2 * VDC_SIDE_MAX, wide.want, wide.left, wide.right);
+    else video_upload(video, pce.vdc.fb, pce.vdc.fb_w, pce.vdc.fb_h, PCE_FB_MAX_W, 0, 0, 0);
+}
+
 /* the frontend's own bookkeeping, after a state load, a rewind or a restart */
 static void watch_reset(void)
 {
     game_watch_reset(&gw, &pce);
     moves_reset(&moves);
+    wide_reset(&wide);
 }
 
 typedef struct Session {
@@ -558,6 +571,7 @@ int main(int argc, char **argv)
      * skipping, take screenshots of the video modes and menu into DIR, then quit. */
     bool autotest = false, play_now = false, autotest_start = false, test_ach = false;
     const char *features_dir = NULL, *disc_arg = NULL, *update_dir = NULL;
+    bool features_failed = false;   /* --autotest-features: a check that must pass did not */
     /* --showcase SCRIPT: a scripted tour in real time, for a video (showcase.h);
      * --showcase-fast SCRIPT: the same uncapped and silent */
     const char *showcase = NULL;
@@ -1154,6 +1168,13 @@ int main(int argc, char **argv)
         bool hardcore = ach_hardcore();
         if (hardcore) memset(&cheats, 0, sizeof cheats);   /* RetroAchievements' hardcore mode: none */
         move_opts = (MoveOptions){set.eight_way && !hardcore && !test_mode, set.limp_whip && !hardcore && !test_mode};
+        {   /* widescreen fills the window's shape (allowed in hardcore mode: the game is unchanged) */
+            int ww, wh;
+            SDL_GetRenderOutputSize(ren, &ww, &wh);
+            int want = set.widescreen && !test_mode && wh > 0
+                           ? wide_extent((double)ww / wh, video_picture_aspect(&set, pce.vdc.fb_h)) : 0;
+            wide_set_want(&wide, want);
+        }
         bool rewinding = false, ran_frame = false;
         if (menu_on_start_screen(&menu)) {
             /* the start screen: the game waits for Play (nothing runs, nothing sounds) */
@@ -1300,7 +1321,7 @@ int main(int argc, char **argv)
         }
 
         /* video */
-        video_upload(&video, pce.vdc.fb, pce.vdc.fb_w, pce.vdc.fb_h, PCE_FB_MAX_W);
+        upload_picture(&video);
         if (features_dir && !t_shots && pce.frame >= 17880) {
             /* screenshots: 16:9 window with each picture mode and screen effect, then the menu
              * pages */
@@ -1573,7 +1594,7 @@ int main(int argc, char **argv)
                     pce.pad = moves_pad(&moves, &pce, &on, pad, attack);
                     if (attack) up_seen |= pce.pad & PAD_UP;
                     run_frame();
-                    video_upload(&video, pce.vdc.fb, pce.vdc.fb_w, pce.vdc.fb_h, PCE_FB_MAX_W);
+                    upload_picture(&video);
                     char path[1200];
                     if (moves.draw && moves.dir == 2) {
                         up_frames++;
@@ -1599,6 +1620,32 @@ int main(int argc, char **argv)
                 TLOG("features: moves: the whip turned up on %d frames (its hitbox %d px above Richter), Up %s; "
                      "held limp for %d frames, swung ahead to %d px\n", up_frames, up_box,
                      up_seen ? "PASSED TO THE GAME" : "kept from the game", limp_frames, limp_ahead);
+            }
+            {   /* widescreen (wide.h) in the 16:9 window, walking right through Stage 1's town */
+                int ww, wh;
+                SDL_GetRenderOutputSize(ren, &ww, &wh);
+                double pic = video_picture_aspect(&set, pce.vdc.fb_h);
+                wide_set_want(&wide, wh > 0 ? wide_extent((double)ww / wh, pic) : 0);
+                long runs = wide.builder_runs, fails = wide.builder_fails, side_frames = 0;
+                for (int i = 0; i < 240; i++) {
+                    pce.pad = PAD_RIGHT;
+                    run_frame();
+                    upload_picture(&video);
+                    if (wide.left || wide.right) side_frames++;
+                }
+                runs = wide.builder_runs - runs;
+                fails = wide.builder_fails - fails;
+                char path[1200];
+                video_draw(&video, &set);
+                snprintf(path, sizeof path, "%s/stage1_wide.bmp", features_dir);
+                screenshot(ren, path);
+                /* the sprite hook depends on the builder's entry (wide.c): a test that fails if it stops */
+                bool bad = !side_frames || !runs || fails;
+                if (bad) features_failed = true;
+                TLOG("features: widescreen: %s%d columns asked each side, %d / %d shown, %ld frames with sides; "
+                     "sprite builder run %ld times, %ld failed\n", bad ? "PROBLEM: " : "", wide.want, wide.left,
+                     wide.right, side_frames, runs, fails);
+                wide_set_want(&wide, 0);
             }
             /* the Language option, without asking: the other language's disc if installed */
             int from = ss.language;
@@ -1679,5 +1726,5 @@ int main(int argc, char **argv)
     }
 #endif
     SDL_Quit();
-    return 0;
+    return features_failed ? 1 : 0;
 }

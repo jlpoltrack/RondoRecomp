@@ -13,6 +13,8 @@
 #include "../frontend/game.h"
 #include "../frontend/moves.h"
 #include "../frontend/prompt.h"
+#include "../frontend/wide.h"
+#include "wide_audit.h"
 #include "recomp/recomp.h"
 #include "../recomp/capture_script.h"
 #include "util/png.h"
@@ -206,6 +208,9 @@ int main(int argc, char **argv)
     long run_at[16][2]; /* --run FRAME:LEN: hold the run button */
     int n_run = 0;
     long rows_from = -1, rows_to = -1;   /* --row-scroll A:B: each frame's bands of rows by X scroll */
+    static Wide wide;   /* --wide N: N columns each side (wide.h); --wide-any: every room */
+    FILE *audit = NULL; /* --wide-audit FILE: per room, what the sides showed (wide_audit.h) */
+    static uint32_t canvas[PCE_FB_MAX_H * (256 + 2 * VDC_SIDE_MAX)];
     long sat_at[8]; /* --dump-sat FRAME: print the sprite table after that frame */
     int n_sat = 0;
     for (int i = 2; i < argc; i++) {
@@ -284,6 +289,11 @@ int main(int argc, char **argv)
             if (sscanf(argv[++i], "%ld:%ld", &run_at[n_run][0], &run_at[n_run][1]) == 2) n_run++;
         }
         else if (!strcmp(argv[i], "--row-scroll") && i + 1 < argc) sscanf(argv[++i], "%ld:%ld", &rows_from, &rows_to);
+        else if (!strcmp(argv[i], "--wide") && i + 1 < argc) wide.want = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--wide-any")) wide.any_room = true;
+        else if (!strcmp(argv[i], "--wide-audit") && i + 1 < argc) {
+            if (!(audit = fopen(argv[++i], "w"))) { fprintf(stderr, "cannot write %s\n", argv[i]); return 1; }
+        }
         else if (!strcmp(argv[i], "--dump-sat") && i + 1 < argc && n_sat < 8) sat_at[n_sat++] = atol(argv[++i]);
         else if (!strcmp(argv[i], "--vram-watch") && i + 1 < argc) {
             if (sscanf(argv[++i], "%x:%x", &vw_lo, &vw_hi) == 2) vw_count = calloc(1u << 24, sizeof *vw_count);
@@ -378,6 +388,8 @@ int main(int argc, char **argv)
     }
     game_watch_reset(&gw, &pce);
     moves_reset(&moves);
+    wide.want = wide.want < 0 ? 0 : wide.want > VDC_SIDE_MAX ? VDC_SIDE_MAX : wide.want;
+    wide_reset(&wide);
     TitlePrompt tp = {.pad = prompt_dev == 1};
     for (int i = 0; i < n_ww; i++) ww_last[i] = pce.wram[ww_addr[i]];
     memcpy(pw_last, pce.vce.pal, sizeof pw_last);
@@ -413,10 +425,13 @@ int main(int argc, char **argv)
         pce.pad = moves_pad(&moves, &pce, &move_opts, pce.pad, pce.pad & PAD_II);
         if (prompt_dev >= 0) prompt_before_frame(&tp, &pce);
         moves_before_frame(&moves, &pce, &move_opts, true);
+        wide_before_frame(&wide, &pce);
         pce_run_frame(&pce);
         if (prompt_dev >= 0) prompt_after_frame(&tp, &pce);
         moves_after_frame(&moves, &pce, &move_opts, true);
         game_apply_cheats(&pce, &cheats, &gw);
+        int canvas_w = wide_compose(&wide, &pce, canvas, 256 + 2 * VDC_SIDE_MAX);
+        if (audit) audit_frame(&wide, &pce, canvas, canvas_w, out);
         {
             bool run = false;
             for (int i = 0; i < n_run; i++) run |= f >= run_at[i][0] && f < run_at[i][0] + run_at[i][1];
@@ -493,7 +508,9 @@ int main(int argc, char **argv)
         if ((shot_every > 0 && (f + 1) % shot_every == 0) || f + 1 == start_frame + frames) {
             char path[512];
             snprintf(path, sizeof path, "%s/frame_%05ld.png", out, f + 1);
-            if (!png_write_argb(path, pce.vdc.fb, pce.vdc.fb_w, pce.vdc.fb_h, PCE_FB_MAX_W))
+            bool ok = canvas_w ? png_write_argb_alpha(path, canvas, canvas_w, pce.vdc.fb_h, 256 + 2 * VDC_SIDE_MAX)
+                               : png_write_argb(path, pce.vdc.fb, pce.vdc.fb_w, pce.vdc.fb_h, PCE_FB_MAX_W);
+            if (!ok)
                 fprintf(stderr, "cannot write %s (does the directory exist?)\n", path);
             HuC6280 *c = &pce.cpu;
             printf("frame %5ld  PC=%02X:%04X  CR=%04X MWR=%04X SATB=%04X  %dx%d  irq_m=%02X  vec1=%02X%02X  io?=%u\n",
@@ -527,6 +544,10 @@ int main(int argc, char **argv)
         if (seeds_path && recomp_write_misses(seeds_path)) printf("Seeds written to %s\n", seeds_path);
         if (misses_path && recomp_write_misses(misses_path)) printf("Misses written to %s\n", misses_path);
     }
+    if (wide.want)
+        printf("Widescreen: sprite builder run %ld times, %ld failed, %ld side tables full\n", wide.builder_runs,
+               wide.builder_fails, wide.tables_full);
+    if (audit) { audit_write(audit); fclose(audit); }
     if (skip_cine) printf("Cinematic frames run with input ignored: %ld\n", skipped);
     if (pce.frame > (uint64_t)start_frame)
         printf("Master clock: %.1f cycles a frame over this run (nominal %d)\n",

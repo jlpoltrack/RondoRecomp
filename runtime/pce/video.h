@@ -29,6 +29,14 @@ enum {
     VDC_ST_VD = 0x20,   /* vertical blank */
 };
 
+/* VDC register numbers */
+enum {
+    R_MAWR = 0x00, R_MARR = 0x01, R_VWR = 0x02, R_CR = 0x05, R_RCR = 0x06,
+    R_BXR = 0x07, R_BYR = 0x08, R_MWR = 0x09, R_HSR = 0x0A, R_HDR = 0x0B,
+    R_VSR = 0x0C, R_VDR = 0x0D, R_VCR = 0x0E, R_DCR = 0x0F, R_SOUR = 0x10,
+    R_DESR = 0x11, R_LENR = 0x12, R_DVSSR = 0x13,
+};
+
 typedef struct Vdc {
     uint16_t vram[0x8000];
     uint16_t satb[256];
@@ -65,6 +73,8 @@ void vdc_line_start(Vdc *d, int line);
 void vdc_vblank(Vdc *d);
 /* Called after the CPU has run the line: renders it if it is an active display line. */
 void vdc_line_end(Vdc *d, const Vce *vce, int line);
+/* The background map's width in cells (MWR). */
+int vdc_map_w(const Vdc *d);
 
 /* Host-side, kept outside the machine state (save states are unchanged; one picture is
  * drawn at a time per process):
@@ -76,3 +86,19 @@ void vdc_line_end(Vdc *d, const Vce *vce, int line);
  *   collision, as if drawn: only their pixels are not put in the picture. */
 const uint16_t *vdc_row_scroll(void);
 void vdc_set_sprite_hide(uint64_t mask);
+/* The background Y line each displayed row of the last frame was drawn from. */
+const uint16_t *vdc_row_y(void);
+
+/* Widescreen side columns, host-side: never in the machine state, a status flag or an
+ * interrupt. For 256-pixel pictures only. */
+#define VDC_SIDE_MAX 64
+/* Columns to draw left and right of the picture from now on (0..VDC_SIDE_MAX each). */
+void vdc_set_side(int left, int right);
+/* Sprite tables for the sides (64 SATB entries each, X moved by dx), used from the next
+ * sprite table DMA on; NULL: no sprites on that side. */
+void vdc_set_side_sprites(const uint16_t *left, int left_dx, const uint16_t *right, int right_dx);
+/* No side sprites from now on, without waiting for the DMA. */
+void vdc_drop_side_sprites(void);
+/* The last frame's sides, per row: VDC_SIDE_MAX columns left (x -64..-1), then right
+ * (x 256..319). 0 (no alpha) where not drawn. */
+const uint32_t *vdc_side_pixels(void);

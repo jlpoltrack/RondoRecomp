@@ -205,6 +205,10 @@ states, choose the slot, reset, back to the start screen, quit, and:
 Video      Fullscreen (uses the screen's own resolution, e.g. 4K)
            VSync: on (the default), each frame is shown when the screen refreshes, so the
            picture never tears; off shows it at once
+           Widescreen (experimental, off by default): some rooms fill a wide screen with
+           more of the world, as far as their walls; elsewhere the picture is 4:3. It is
+           only drawn, so the game plays exactly the same (hardcore mode too). It does
+           nothing with Aspect ratio: Stretch
            Aspect ratio: 4:3 (as on a TV), square pixels, or stretched to fill the screen
            Size: Fit screen (as big as the screen allows), or Whole multiples (every game
            pixel the same size; leaves a border)

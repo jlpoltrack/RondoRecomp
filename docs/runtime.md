@@ -431,6 +431,63 @@ rcheevos 12.5.0 (`third_party/rcheevos`, MIT; built with `RC_NO_THREADS` and onl
   = 01) through the same memory map. It must fire at the first frame of play after the
   opening cinematic (16105), in that state.
 
+### Widescreen (`wide.c`, `video.c` in `runtime/pce`)
+
+The Video page's "Widescreen (experimental)", off by default, shows more of the world on a
+wide screen in the rooms listed in `wide.c`. It is only drawn: the machine runs exactly as at
+4:3, so save states, rewind, input recordings and RetroAchievements (hardcore too) are
+unaffected. `wide_test <game.cue>` checks this: two machines run the capture script side by
+side, both drawing 64-column sides in every room (the VDC's side state is the process's, so
+both draw them); only one has the sprite builder's hook. After each of frames 16000-21000
+(the Prologue's chase, its end and Stage 1's first room) their machine states (all of
+`pce_state_capture`) and pictures must be the same.
+
+- **Width.** As wide as the window, up to 46 columns each side of the 256 (42 for 16:9 with a
+  TV's pixels; 64 with square ones, capped at 46; none with Aspect ratio: Stretch, which has no
+  picture shape to keep). The game draws its 512-pixel background map 64 px past both edges
+  of the screen, so that much could be shown, but it also brings objects in 64 px out: from
+  48 columns their pieces appear inside the sides. The audit's pop-ins over every saved state:
+  195 at 42 columns, 199 at 46 (all 4 more in Stage 7's two rooms, whose objects come from
+  farther and add a few at any width), 277 at 48, 382 at 64; along the route 57, 57 and 97.
+- **Background.** The VDC draws the side columns from the map into a buffer of its own
+  (`vdc_set_side`, `vdc_side_pixels`; never into the machine state, a status flag or an
+  interrupt), with each row's own X scroll, so parallax bands carry on into the sides.
+- **Sprites.** The game's sprite builder (72:8000) drops pieces outside the 256 pixels. At its
+  entry (`Pce.on_entry`) the builder is run twice more on the interpreter (`pce_call`), with
+  every object that moves with the world shifted 256 px right, then left, and the objects fixed
+  to the screen (HUD, titles, a boss's gauge, generators) moved out of the way; the sprite
+  tables it writes to VRAM are kept as the sides' (`vdc_set_side_sprites`, swapped in with the
+  real table's DMA) and the whole machine, saved once before, is then put back as it was. Each
+  run has the full 64 sprites to itself. It runs only in frames with sides; in others the
+  sides' tables are dropped, so none come back stale. The features test fails (exit 1) if it
+  ran no times while sides were drawn (the hook depends on the builder's entry address).
+- **When.** Playing (`$30` = 05, `$31` = 01) in a 256-pixel picture, in a listed room (area
+  `$A2`, room `$83`), and never past the camera's limits (`$1EBE`, `$1EC6-7`). Away from walls
+  the sides grow 2 columns a frame; they shrink at once, to the wall or to none (a room's
+  exit, a death's restart, menus, an unlisted room); after a load or a rewind they start again
+  from none. Empty columns show the "Beside the picture" fill; screen effects cover only the
+  columns drawn, with the curve, mask and vignette of the whole picture (they stay still as
+  the sides change).
+- **Rooms.** A room is listed once `rondo_headless --wide 46 --wide-any --wide-audit FILE`
+  over it finds no wrong cells and its pictures look right; `python3 tools/wide_audit_all.py
+  <cue>` audits every state in `work/states/manifest.txt` at once (states made with
+  `tools/reach_stages.py`); `--route-every 400` also asks the game to leave the room every 400
+  frames (`$8C` = 80, `$38` = 3: walking off its edge), so each run goes on through the
+  stage's route. Past the part of the route the game has filled in, that breaks the game
+  (garbled rooms, then areas like $F7): only rooms that look whole count. Listed: 40 rooms of
+  Stages 1-5, 7, the Final stage and the untitled boss areas. Stage 7's ramparts ($22:00, $1C:00)
+  are not: the bats crossing the sky appear inside the sides (pop-ins 31-35 at 2 columns, which
+  is the 4:3 edge, rising to 75-79 at 46). The audit remembers each map
+  cell seen in the middle on rows that scroll with the camera, by its place in the world, and
+  compares the sides with it (`mismatch`; `unverified` if never seen in the middle; frames
+  with the background off are skipped), and counts objects starting or ending inside a side
+  (`popins`, `vanishes`: objects thrown in from beyond the side count too, so look at the PNG
+  it saves). Rows of other layers are not checked (`band_rows`).
+- **Not yet.** Rooms not checked yet (most rooms after each area's first), the Prologue's
+  carriage chase (its camera does not move, so the limits leave
+  no room), the HUD, a boss's gauge and stage titles staying at the 4:3 picture's edges, and
+  rooms whose scenery the game only draws as far as the 4:3 view.
+
 ### Headless runner
 
 ```sh
