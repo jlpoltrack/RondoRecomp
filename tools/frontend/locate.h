@@ -23,5 +23,5 @@ void locate_remember(const char *cue_path);
  * e.g. to try the game as a new player; Setup and rondo.exe started from each other inherit
  * it), else a folder named user next to the game if there is one (portable mode; on Linux's
  * AppImage, next to the AppImage), else %APPDATA%\RondoRecomp\RondoRecomp
- * (~/.local/share/RondoRecomp/RondoRecomp on Linux). */
+ * (~/.local/share/RondoRecomp/RondoRecomp on Linux, profile/ in the game's folder on Android). */
 bool locate_profile_dir(char *out, size_t n);

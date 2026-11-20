@@ -23,6 +23,20 @@
 #define SETUP_CLI_PROGRAM "rondo_setup"
 #endif
 
+/* The game's own folder: on Android the app's external files folder (adb can fill it), since
+ * SDL's base path there is "./", which SDL reads as the APK's assets */
+static inline const char *rondo_base_path(void)
+{
+#ifdef __ANDROID__
+    static char dir[1024];
+    const char *ext = dir[0] ? NULL : SDL_GetAndroidExternalStoragePath();
+    if (ext) snprintf(dir, sizeof dir, "%s/", ext);
+    return dir[0] ? dir : NULL;
+#else
+    return SDL_GetBasePath();
+#endif
+}
+
 /* Two folders, the same one but on Linux's AppImage (tools/linux/AppRun, which sets
  * RONDO_APPIMAGE, RONDO_APPDIR and RONDO_HOME, each folder ending in a slash):
  * - the tools: Setup's programs, sdk/ and zig/ (in the AppImage: read-only);
@@ -36,13 +50,13 @@ static inline const char *rondo_env_dir(const char *name)
 static inline const char *rondo_tools_dir(void)
 {
     const char *d = rondo_env_dir("RONDO_APPDIR");
-    const char *base = SDL_GetBasePath();
+    const char *base = rondo_base_path();
     return d ? d : base ? base : "./";
 }
 static inline const char *rondo_home_dir(void)
 {
     const char *d = rondo_env_dir("RONDO_HOME");
-    const char *base = SDL_GetBasePath();
+    const char *base = rondo_base_path();
     return d ? d : base ? base : "./";
 }
 /* the AppImage file this runs from, NULL if it does not */
@@ -60,7 +74,7 @@ static inline const char *rondo_appimage(void)
  * being built in a folder of the player's); no separator at the end. */
 static inline void rondo_user_dir(char *out, size_t n)
 {
-    const char *image = rondo_appimage(), *base = SDL_GetBasePath();
+    const char *image = rondo_appimage(), *base = rondo_base_path();
     char dir[1024];
     snprintf(dir, sizeof dir, "%s", image ? image : base ? base : "./");
     size_t l = strlen(dir);

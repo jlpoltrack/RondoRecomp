@@ -18,6 +18,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #ifndef _WIN32
 #include <unistd.h>
@@ -119,6 +120,14 @@ static bool choose_disc(SDL_Window *win, SDL_Renderer *ren, const char *arg, cha
         locate_remember(out);
         return true;
     }
+#ifdef __ANDROID__
+    char where[1200];
+    snprintf(where, sizeof where, "No disc found. Copy your disc image (the .cue with its tracks, or a .chd) "
+             "with adb into\n%sgame/en (or game/ja for the Japanese disc), then start the game again.",
+             rondo_base_path() ? rondo_base_path() : "");
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Rondo Recomp", where, win);
+    return false;
+#endif
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Rondo Recomp",
                              "Select the .cue (or .chd) file of your Castlevania: Rondo of Blood disc image.\n"
                              "It will be remembered for next time.", win);
@@ -342,7 +351,7 @@ static SDL_EnumerationResult SDLCALL remove_visit(void *ctx, const char *dir, co
  * but for any still in use. */
 static void update_leftovers(void)
 {
-    const char *base = SDL_GetBasePath();
+    const char *base = rondo_base_path();
     char dir[1100];
     snprintf(dir, sizeof dir, "%supdate", base ? base : "");
     SDL_PathInfo info;
@@ -435,7 +444,7 @@ static void update_install(Menu *m)
 /* After an update: the new game in place of this one (args: its arguments, NULL-terminated). */
 static void relaunch(const char *const *args)
 {
-    const char *base = SDL_GetBasePath();
+    const char *base = rondo_base_path();
     static char exe[1100];
     /* from the AppImage: the new AppImage, which starts the game it built */
     if (rondo_appimage()) snprintf(exe, sizeof exe, "%s", rondo_appimage());
@@ -541,7 +550,34 @@ static void count_end(Menu *m, Settings *s)
     menu_update(m, s);
 }
 
+#ifdef __ANDROID__
+/* the TV remote's Back (trapped in the manifest) does what Esc does: the menu, or back */
+static bool SDLCALL remote_back(void *userdata, SDL_Event *ev)
+{
+    (void)userdata;
+    if ((ev->type == SDL_EVENT_KEY_DOWN || ev->type == SDL_EVENT_KEY_UP) && ev->key.scancode == SDL_SCANCODE_AC_BACK) {
+        ev->key.scancode = SDL_SCANCODE_ESCAPE;
+        ev->key.key = SDLK_ESCAPE;
+    }
+    return true;
+}
+#endif
+
+static int run_game(int argc, char **argv);
+
+/* Android: the process ends with the game, or SDL closes the next launch at once (it would reuse
+ * this process, whose main() has finished) */
 int main(int argc, char **argv)
+{
+#ifdef __ANDROID__
+    SDL_SetEventFilter(remote_back, NULL);
+    exit(run_game(argc, argv));
+#else
+    return run_game(argc, argv);
+#endif
+}
+
+static int run_game(int argc, char **argv)
 {
     /* the test runs (--autotest...) are silent: the sound is made as usual, for SDL's dummy
      * driver (RONDO_TEST_AUDIO=1 to hear them) */
@@ -667,7 +703,7 @@ int main(int argc, char **argv)
                  id < 0 ? why : "");
             if (id != 4855) bad++;
         }
-        const char *base = SDL_GetBasePath();
+        const char *base = rondo_base_path();
         char log_path[1024];
         snprintf(log_path, sizeof log_path, "%srondo.log", base ? base : "");
         FILE *lf = fopen(log_path, "w");
@@ -696,7 +732,7 @@ int main(int argc, char **argv)
      * --rebuild recompiles them too */
     char misses_path[1024] = "";
     {
-        const char *base = SDL_GetBasePath();
+        const char *base = rondo_base_path();
         if (base) {
             snprintf(misses_path, sizeof misses_path, "%smisses.txt", base);
             recomp_load_misses(misses_path);
@@ -908,6 +944,11 @@ int main(int argc, char **argv)
             if (ev.type == SDL_EVENT_QUIT) {
                 if (menu.updating) snprintf(menu.status, sizeof menu.status, "Wait for the update to finish.");
                 else running = false;
+                continue;
+            }
+            /* Android: Home; the system may end the game there. Saves and settings are already written */
+            if (ev.type == SDL_EVENT_WILL_ENTER_BACKGROUND) {
+                if (misses_path[0] && recomp_stats()->miss_entries) recomp_write_misses(misses_path);
                 continue;
             }
             /* test runs only take the input they send themselves (marked TEST_INPUT), so a key
@@ -1635,7 +1676,7 @@ int main(int argc, char **argv)
     if (misses_path[0] && recomp_stats()->miss_entries) recomp_write_misses(misses_path);
     /* rondo.log next to the executable: what ran natively this session */
     {
-        const char *base = SDL_GetBasePath();
+        const char *base = rondo_base_path();
         char log_path[1024];
         if (base) {
             /* the update test's own log: the new game's --autotest writes rondo.log */

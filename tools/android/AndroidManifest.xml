@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RondoRecomp for Android TV (the NVIDIA Shield TV): SDL3's own activity runs the game
+     (libmain.so). tools/package_android.sh fills in the version. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="io.github.gminustwo.rondorecomp"
+    android:versionCode="@VERSION_CODE@"
+    android:versionName="@VERSION@">
+
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <application
+        android:label="RondoRecomp"
+        android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/banner"
+        android:isGame="true"
+        android:allowBackup="false"
+        android:hardwareAccelerated="true"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+
+        <!-- the remote's Back reaches the game (the menu) instead of closing it -->
+        <meta-data android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON" android:value="1" />
+
+        <activity
+            android:name="org.libsdl.app.SDLActivity"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:alwaysRetainTaskState="true"
+            android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

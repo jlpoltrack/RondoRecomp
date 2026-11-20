@@ -49,6 +49,13 @@ bool locate_profile_dir(char *out, size_t n)
         return true;
     }
     if (portable_dir(out, n)) return true;
+#ifdef __ANDROID__
+    /* in the game's folder, where adb reaches it (docs/android.md) */
+    if (!rondo_base_path()) return false;
+    snprintf(out, n, "%sprofile/", rondo_base_path());
+    SDL_CreateDirectory(out);
+    return true;
+#endif
     char *dir = SDL_GetPrefPath("RondoRecomp", "RondoRecomp");
     if (!dir) return false;
     snprintf(out, n, "%s", dir);
@@ -142,7 +149,7 @@ static SDL_EnumerationResult SDLCALL visit_lang(void *userdata, const char *dirn
 
 bool locate_installed(bool japanese, char *out, size_t out_len)
 {
-    const char *base = SDL_GetBasePath();
+    const char *base = rondo_base_path();
     if (!base) return false;
     char game[1024], dir[1024];
     join(game, sizeof game, base, "game");
@@ -155,7 +162,7 @@ bool locate_installed(bool japanese, char *out, size_t out_len)
 
 bool locate_disc(char *out, size_t out_len)
 {
-    const char *base = SDL_GetBasePath();
+    const char *base = rondo_base_path();
     if (locate_installed(false, out, out_len) || locate_installed(true, out, out_len)) return true;
     if (remembered(out, out_len)) return true;
     if (!base) return false;
