@@ -170,6 +170,66 @@ RetroAchievements: the SDK carries rcheevos (`sdk/src/rcheevos`). `sdk/sources.t
 sources, plus `-I` (relative to the SDK) and `-D` lines, which Setup passes to the compiler.
 On Windows the game also links `winhttp`.
 
+## macOS (Apple silicon)
+
+```sh
+tools/package_release_macos.sh     # on an Apple silicon Mac, with Xcode's command line tools and CMake
+                                   # -> dist/RondoRecomp-<version>-macos-arm64.dmg
+```
+
+The script builds SDL3 3.4.18 from source for macOS 15 and newer (a shared library whose install
+name is `@rpath/libSDL3.0.dylib`), then Setup and the SDK against it, and checks that the Setup
+programs link only the system's libraries and that SDL3 (no Homebrew ones). The release is a disk
+image holding `RondoRecomp.app` and a link to Applications. macOS 15 is the minimum because the
+Zig release for macOS needs it. The script keeps SDL3 and Zig in `build/macos` between runs
+(delete them to redo).
+
+Inside the app, the programs are in `Contents/MacOS` (`RONDO_APPDIR`, Setup's tools folder) and
+the rest in `Contents/Resources`, linked from `Contents/MacOS` (`sdk`, `zig`, `version.txt` there
+are symbolic links to `../Resources/...`), so Setup finds them as on Linux. The signature then
+covers that rest as resources, recorded in the app itself rather than in each file's extended
+attributes, which a copy may drop:
+
+| File | |
+|---|---|
+| `MacOS/RondoRecomp` | what the app starts (`tools/macos/launcher.c`), see below |
+| `MacOS/RondoRecomp Setup`, `MacOS/rondo_setup` | Setup with a window, and from the command line |
+| `MacOS/libSDL3.0.dylib` | used by Setup and the game; both find it next to themselves (`@executable_path`) |
+| `Resources/sdk/`, `Resources/zig/` (linked as `MacOS/sdk`, `MacOS/zig`) | as on Linux (`sdk/lib/libSDL3.0.dylib` to link against); Zig 0.17.0 for aarch64-macos, trimmed |
+| `Resources/version.txt` (linked as `MacOS/version.txt`) | the version and a fingerprint of the app's files |
+
+The launcher does what Linux's `AppRun` does. It sets `RONDO_APPDIR` and `RONDO_HOME` (by
+default `~/Library/Application Support/RondoRecomp/install`, where Setup builds the game) and
+starts the game. If there is no game yet, it opens Setup's window instead, and if the game was
+built by another version, Setup rebuilds it first. `--setup` opens Setup's window, and
+`--setup-cli` runs `rondo_setup`. Setup and the game hand over with `exec`, as on Linux.
+
+Setup builds `rondo` with `zig cc -target aarch64-macos.15.0`, linked against `sdk/lib/libSDL3.0.dylib`
+with `-rpath @executable_path`, and copies the library next to it. Zig signs what it links ad
+hoc, which Apple silicon requires. The game reaches RetroAchievements through the system's
+`/usr/lib/libcurl.4.dylib`.
+
+The app is signed ad hoc, not notarized, so the first time macOS asks the player to allow it
+(System Settings, Privacy & Security, Open Anyway). Notarizing needs an Apple Developer ID.
+macOS checks every file of a downloaded app or disk image the first time it opens, so the
+script trims Zig to what building C for macOS uses. Other systems' C libraries and headers, C++,
+the sanitizers and the unwinder go, which takes it from 19,505 files to about 1,700. Setup built
+the game with the trimmed Zig from a clean cache. The disk image is LZFSE (`ULFO`), which macOS
+verifies in a few seconds.
+
+Not installed in place: the game never matches a macOS update package (`tools/frontend/update.h`
+defines no `UPDATE_EXT` there), so the Updates page says a new version is out and its install
+action opens the release page (`UPD_NEWER`), as on any system a release has no package for. A player drags in the new app, and the launcher
+rebuilds the game the first time it runs. Setup offers no Portable checkbox in the app, whose
+own folder is read-only and signed, and `rondo_setup --portable on` refuses there
+(`rondo_portable_offered` in `tools/frontend/programs.h`); the game keeps its profile in
+Application Support. Intel Macs would need a second build with
+`zig-x86_64-macos` and SDL3 built for x86_64 (Setup already picks `x86_64-macos` when it is
+built for Intel).
+
+Tested on an Apple silicon Mac: Setup from the app built the game from the English and
+Japanese discs, and `--autotest` ran (Metal, CoreAudio, 99.92% native CPU cycles, no late frames).
+
 ## CHD
 
 A `.chd` (MAME's compressed hunks of data, as `chdman createcd` makes it) is kept as it is:

@@ -2,7 +2,7 @@ RondoRecomp
 ===========
 
 Turns your own copy of Castlevania: Rondo of Blood (PC Engine Super CD-ROM2) into a
-native Windows or Linux program (the Steam Deck too). No game files are included: you
+native Windows, Linux or macOS program (the Steam Deck too). No game files are included: you
 provide your own disc image.
 
 What you need
@@ -56,6 +56,26 @@ replace it there.
 To add the other disc later, choose Setup on the game's start screen: the game closes and
 Setup's window opens in its place. In Gaming Mode there may be no file dialog for "Disc
 zip..." (Setup then says so): add discs in Desktop Mode.
+
+macOS
+-----
+The Mac download is RondoRecomp-<version>-macos-arm64.dmg, for Apple silicon Macs (M1 or
+later) with macOS 15 or newer. Open it and drag RondoRecomp onto Applications.
+The app is not notarized by Apple, so the first time macOS refuses to open it ("Apple could
+not verify..."): click Done, then open System Settings, Privacy & Security, scroll down and
+click "Open Anyway" next to RondoRecomp. The first opening takes a moment while macOS checks
+the app's files.
+Run RondoRecomp: the first time, Setup opens; once the game is built, the app starts the
+game. Setup keeps the game it builds, and your disc's files, in
+~/Library/Application Support/RondoRecomp/install (the folder RONDO_HOME names, if you set
+it). Options, saves and states are kept in
+~/Library/Application Support/RondoRecomp/RondoRecomp/. To open Setup again, choose Setup
+on the game's start screen, or run
+/Applications/RondoRecomp.app/Contents/MacOS/RondoRecomp --setup in Terminal.
+A new version: download its .dmg and drag it onto Applications in place of the old one. The
+first time you run it, Setup rebuilds the game (about a minute), then it plays. The game's
+Updates page says when a new version is out, but on a Mac it does not install it.
+Portable mode (below) is not offered on a Mac.
 
 Virtual Console (Wii and Wii U)
 -------------------------------
@@ -242,8 +262,9 @@ Cheats     Infinite health, infinite hearts (always 99), infinite lives. At a st
 Language   English patch or Japanese original (each is its own disc; see below)
 
 Options are kept in %APPDATA%\RondoRecomp\RondoRecomp\settings.ini (on Linux in
-~/.local/share/RondoRecomp/RondoRecomp/settings.ini), or in the user folder in portable
-mode (see Portable mode below).
+~/.local/share/RondoRecomp/RondoRecomp/settings.ini, on a Mac in
+~/Library/Application Support/RondoRecomp/RondoRecomp/settings.ini), or in the user folder
+in portable mode (see Portable mode below).
 
 Your own icon (Windows)
 -----------------------
@@ -257,7 +278,8 @@ where you let go; up to 30 minutes are kept. Rewinding never changes your saved 
 
 In-game saves are kept in %APPDATA%\RondoRecomp\RondoRecomp\bram.bin (bram-ja.bin for
 Japanese), save states in %APPDATA%\RondoRecomp\RondoRecomp\states\ (on Linux the same
-files in ~/.local/share/RondoRecomp/RondoRecomp/).
+files in ~/.local/share/RondoRecomp/RondoRecomp/, on a Mac in
+~/Library/Application Support/RondoRecomp/RondoRecomp/).
 To keep a separate set (options, saves, states), set the environment variable
 RONDORECOMP_PROFILE to a folder before starting Setup or rondo.exe; your usual ones are
 left alone.
@@ -283,8 +305,10 @@ screen it lays itself out for 4:3 (640 x 480 at its own size); on a screen too s
 that in a window (640 x 480 itself) it opens full screen. The "4:3 screen" checkbox at the
 bottom right of its window switches between the 4:3 layout and the wide one, and Setup
 remembers the choice (in setup.ini next to it; on Linux in
-~/.local/share/RondoRecomp/install). "RondoRecomp Setup.exe" --4:3 or --wide
-chooses for that one run (on Linux: the AppImage with --setup --4:3 or --setup --wide).
+~/.local/share/RondoRecomp/install, on a Mac in ~/Library/Application Support/RondoRecomp/
+install). "RondoRecomp Setup.exe" --4:3 or --wide chooses for that one run (on Linux: the
+AppImage with --setup --4:3 or --setup --wide; on a Mac: RondoRecomp --setup --4:3 or
+--setup --wide).
 The game opens in a 4:3 window (960 x 720, smaller if the screen is) and F11 or Menu,
 Video, Fullscreen fills the whole screen. On a 4:3 screen the picture fills it as on a TV.
 The start screen puts the title above the menu, and the menu's pages grow to the screen's

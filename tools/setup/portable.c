@@ -81,6 +81,11 @@ static bool copy_tree(const char *from, const char *to)
 
 bool portable_enable(bool copy)
 {
+    if (!rondo_portable_offered()) {
+        snprintf(g_err, sizeof g_err, "portable mode is not offered in the macOS app: the game keeps its "
+                 "settings and saves in ~/Library/Application Support/RondoRecomp/RondoRecomp");
+        return false;
+    }
     char user[1024], appdata[1024];
     rondo_user_dir(user, sizeof user);
     if (!is_dir(user) && !SDL_CreateDirectory(user)) {

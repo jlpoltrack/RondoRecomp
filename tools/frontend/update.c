@@ -27,6 +27,8 @@ const char *update_user_agent(void)
 {
 #ifdef _WIN32
     return "RondoRecomp/" RONDO_VERSION " (Windows)";
+#elif defined(__APPLE__)
+    return "RondoRecomp/" RONDO_VERSION " (macOS)";
 #else
     return "RondoRecomp/" RONDO_VERSION " (Linux)";
 #endif
@@ -230,11 +232,13 @@ static bool asset_field(Js *j, const char *key, void *ctx)
     return js_skip(j, 0);
 }
 
+#ifdef UPDATE_EXT
 static bool ends_with(const char *s, const char *suffix)
 {
     size_t a = strlen(s), b = strlen(suffix);
     return a >= b && !strcmp(s + a - b, suffix);
 }
+#endif
 
 static bool release_field(Js *j, const char *key, void *ctx)
 {
@@ -254,6 +258,7 @@ static bool release_field(Js *j, const char *key, void *ctx)
         for (;;) {
             memset(&r->cur, 0, sizeof r->cur);
             if (!js_object(j, asset_field, &r->cur)) return false;
+#ifdef UPDATE_EXT
             if (!strncmp(r->cur.name, "RondoRecomp-", 12)) {
                 if (ends_with(r->cur.name, "-" UPDATE_SYSTEM "-update-zig" RONDO_ZIG_VERSION UPDATE_EXT)) {
                     r->slim = r->cur;
@@ -266,6 +271,7 @@ static bool release_field(Js *j, const char *key, void *ctx)
                     r->have_appimage = true;
                 }
             }
+#endif
             if (js_lit(j, ',')) continue;
             return js_lit(j, ']');
         }
@@ -411,7 +417,8 @@ static void on_release(int status, const char *body, size_t len, void *userdata)
         snprintf(check_why, sizeof check_why, "%s", err);
     } else {
         found = info;
-        check_state = info.url[0] && update_compare(info.version, update_current_version()) > 0 ? UPD_AVAILABLE : UPD_LATEST;
+        bool newer = update_compare(info.version, update_current_version()) > 0;
+        check_state = !newer ? UPD_LATEST : info.url[0] ? UPD_AVAILABLE : UPD_NEWER;
     }
 }
 
@@ -428,7 +435,7 @@ void update_check_start(void)
 
 UpdateState update_state(const UpdateInfo **info, const char **why)
 {
-    if (info) *info = check_state == UPD_AVAILABLE || check_state == UPD_LATEST ? &found : NULL;
+    if (info) *info = check_state == UPD_AVAILABLE || check_state == UPD_NEWER || check_state == UPD_LATEST ? &found : NULL;
     if (why) *why = check_why;
     return check_state;
 }

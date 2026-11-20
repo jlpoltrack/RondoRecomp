@@ -341,7 +341,7 @@ int main(int argc, char **argv)
         if (!strcmp(argv[i], "--wide")) screen_arg = 0;
     }
     if (!SDL_Init(SDL_INIT_VIDEO)) return 1;
-    /* where the game is built: this folder, or the AppImage's own (programs.h) */
+    /* where the game is built: this folder, or the AppImage's or the macOS app's own (programs.h) */
     snprintf(base_dir, sizeof base_dir, "%s", rondo_home_dir());
     SDL_CreateDirectory(base_dir);
     mtx = SDL_CreateMutex();
@@ -411,7 +411,8 @@ int main(int argc, char **argv)
             if (have_game && st != DONE) buttons[nb++] = (Button){418, 340 + off, 100, 32, "Rebuild", B_REBUILD};
             buttons[nb++] = (Button){526, 340 + off, 90, 32, "Quit", B_QUIT};
             /* the checkboxes' rows: their boxes and labels */
-            buttons[nb++] = (Button){24, 378 + off, 20 + 8.0f * (float)strlen(portable_label), 16, NULL, B_PORTABLE};
+            if (rondo_portable_offered())
+                buttons[nb++] = (Button){24, 378 + off, 20 + 8.0f * (float)strlen(portable_label), 16, NULL, B_PORTABLE};
             buttons[nb++] = (Button){516, 378 + off, 100, 16, NULL, B_SCREEN};
         }
 
@@ -474,10 +475,12 @@ int main(int argc, char **argv)
             SDL_RenderDebugText(ren, 24, line_y(84), "   Unzipped: click \"Disc folder...\" and pick the folder it is in.");
             SDL_RenderDebugText(ren, 24, line_y(96), "   The original Japanese disc or the English translation: either works.");
             SDL_RenderDebugText(ren, 24, line_y(112), "2. Setup checks the disc, extracts it, recompiles the game code");
-            if (rondo_appimage()) {
+            if (rondo_env_dir("RONDO_HOME")) {   /* the AppImage, the macOS app */
                 char where[100];
                 snprintf(where, sizeof where, "   in %.70s", base_dir);
-                SDL_RenderDebugText(ren, 24, line_y(124), "   and builds the game (about a minute; longer on a Steam Deck)");
+                SDL_RenderDebugText(ren, 24, line_y(124),
+                                    rondo_appimage() ? "   and builds the game (about a minute; longer on a Steam Deck)"
+                                                     : "   and builds the game (about a minute)");
                 SDL_RenderDebugText(ren, 24, line_y(136), where);
             } else {
                 SDL_RenderDebugText(ren, 24, line_y(124), "   and builds " GAME_PROGRAM " in this folder. This takes about a minute.");

@@ -158,7 +158,11 @@ static bool backend_ready(void)
 {
     static int state;      /* 0 not tried, 1 loaded, -1 missing */
     if (state) return state > 0;
+#ifdef __APPLE__
+    static const char *const names[] = {"/usr/lib/libcurl.4.dylib"};   /* the system's */
+#else
     static const char *const names[] = {"libcurl.so.4", "libcurl-gnutls.so.4", "libcurl.so"};
+#endif
     SDL_SharedObject *so = NULL;
     for (size_t i = 0; i < sizeof names / sizeof names[0] && !so; i++) so = SDL_LoadObject(names[i]);
     if (so) {

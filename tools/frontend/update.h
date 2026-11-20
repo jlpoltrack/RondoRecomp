@@ -22,6 +22,10 @@
 #ifdef _WIN32
 #define UPDATE_SYSTEM "windows-x64"
 #define UPDATE_EXT ".zip"
+#elif defined(__APPLE__)
+/* no UPDATE_EXT: no package is ever matched. The .dmg is replaced by hand, and the app
+ * rebuilds the game when it is another (tools/macos/launcher.c). */
+#define UPDATE_SYSTEM "macos-arm64"
 #else
 #define UPDATE_SYSTEM "linux-x86_64"
 #define UPDATE_EXT ".tar.gz"
@@ -51,9 +55,10 @@ bool update_parse(const char *json, size_t len, UpdateInfo *info, char *err, siz
 bool update_progress_line(const char *seg, char *what, size_t n, int *pct);
 
 /* ---- the check, in the background (http.h; http_poll delivers it) ---- */
-typedef enum { UPD_IDLE, UPD_CHECKING, UPD_LATEST, UPD_AVAILABLE, UPD_FAILED } UpdateState;
+/* UPD_NEWER: a newer release, without a package for this system (installed from its page) */
+typedef enum { UPD_IDLE, UPD_CHECKING, UPD_LATEST, UPD_AVAILABLE, UPD_NEWER, UPD_FAILED } UpdateState;
 void update_check_start(void);
-/* info: the newer release (UPD_AVAILABLE); why: what went wrong (UPD_FAILED) */
+/* info: GitHub's latest release (UPD_LATEST, UPD_AVAILABLE, UPD_NEWER); why: what went wrong (UPD_FAILED) */
 UpdateState update_state(const UpdateInfo **info, const char **why);
 
 /* ---- installing (the game): Setup's update, followed as it goes ---- */

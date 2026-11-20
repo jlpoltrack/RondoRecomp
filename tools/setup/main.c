@@ -46,6 +46,15 @@
 #define ZIG_PROGRAM "zig/zig.exe"
 #define ZIG_TARGET "x86_64-windows-gnu"
 #define SDL_LINK "libSDL3.dll.a"   /* import library, in sdk/lib */
+#elif defined(__APPLE__)
+#define ZIG_PROGRAM "zig/zig"
+/* the architecture Setup runs as (its zig is that one's); macOS 15, which zig itself needs */
+#if defined(__aarch64__)
+#define ZIG_TARGET "aarch64-macos.15.0"
+#else
+#define ZIG_TARGET "x86_64-macos.15.0"
+#endif
+#define SDL_LINK "libSDL3.0.dylib"  /* the library itself, in sdk/lib */
 #else
 #define ZIG_PROGRAM "zig/zig"
 /* glibc 2.35 (Ubuntu 22.04, SteamOS 3 and newer): zig links against that version's symbols,
@@ -443,6 +452,17 @@ static bool compile_all(const char *const *cflags, int n_cflags, const char *con
     return ok;
 }
 
+/* two files hold the same bytes */
+static bool same_content(const char *a, const char *b)
+{
+    size_t la = 0, lb = 0;
+    void *da = SDL_LoadFile(a, &la), *db = SDL_LoadFile(b, &lb);
+    bool same = da && db && la == lb && !memcmp(da, db, la);
+    SDL_free(da);
+    SDL_free(db);
+    return same;
+}
+
 static bool build(const char *sdk, const char *zig, const char *out, const char *gen_dir)
 {
     /* the list of runtime sources ships with the SDK */
@@ -475,7 +495,7 @@ static bool build(const char *sdk, const char *zig, const char *out, const char 
     cflags[nf++] = ZIG_TARGET;
     cflags[nf++] = "-O2";
     cflags[nf++] = "-std=c11";
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__APPLE__)
     cflags[nf++] = "-D_DEFAULT_SOURCE";          /* glibc: strdup, strcasecmp (rcheevos) under -std=c11 */
 #endif
     cflags[nf++] = "-w";
@@ -551,6 +571,9 @@ static bool build(const char *sdk, const char *zig, const char *out, const char 
     link[nl++] = opt_l;
     link[nl++] = "-lwinhttp";                 /* RetroAchievements' server (tools/frontend/http.c) */
     link[nl++] = "-Wl,--subsystem,windows";   /* GUI program: zig cc ignores -mwindows */
+#elif defined(__APPLE__)
+    link[nl++] = opt_l;
+    link[nl++] = "-Wl,-rpath,@executable_path";   /* libSDL3.0.dylib is found next to rondo */
 #else
     link[nl++] = opt_l;
     link[nl++] = "-lm";
@@ -571,7 +594,7 @@ static bool build(const char *sdk, const char *zig, const char *out, const char 
     static const char *dlls[] = {"SDL3.dll", "libiconv-2.dll"};
     const char *dll_dir = "bin";
 #else
-    static const char *dlls[] = {"libSDL3.so.0"};
+    static const char *dlls[] = {SDL_LINK};
     const char *dll_dir = "lib";
 #endif
     for (size_t i = 0; i < sizeof dlls / sizeof dlls[0]; i++) {
@@ -582,7 +605,7 @@ static bool build(const char *sdk, const char *zig, const char *out, const char 
         SDL_PathInfo si, di;
         if (!SDL_GetPathInfo(src, &si)) continue;
         /* already there (e.g. Setup itself runs from this folder with the same DLL loaded) */
-        if (SDL_GetPathInfo(dst, &di) && di.size == si.size) continue;
+        if (SDL_GetPathInfo(dst, &di) && di.size == si.size && same_content(src, dst)) continue;
         char fresh[1200];
         snprintf(fresh, sizeof fresh, "%s.new", dst);
         if (!SDL_CopyFile(src, fresh)) {
@@ -738,7 +761,7 @@ int setup_main(int argc, char **argv)
         return 2;
     }
     /* the game is built in home; sdk/ and zig/ are next to Setup (programs.h: both are this
-     * folder but in the Linux AppImage) */
+     * folder but in the Linux AppImage and the macOS app) */
     char out[1024], sdk[1024], zig[1024], stage[1100], game[1100], gen_dir[1100], cue[1100];
     snprintf(out, sizeof out, "%s", out_arg ? out_arg : rondo_home_dir());
     if (sdk_arg) snprintf(sdk, sizeof sdk, "%s", sdk_arg); else join(sdk, sizeof sdk, rondo_tools_dir(), "sdk");
@@ -907,9 +930,8 @@ int setup_main(int argc, char **argv)
         return fail("building");
     }
     if (!build(sdk, zig, out, gen_dir)) return fail("building");
-    /* Which version built it: the AppImage rebuilds the game when it is another one. The
-     * AppImage's version.txt (its version and a fingerprint of its contents, tools/linux/
-     * build.sh) is copied, so a new build of the same version counts as another. */
+    /* The AppImage's or the macOS app's version.txt (its version and a fingerprint of its files),
+     * kept with the game: they rebuild it when it differs, even for a new build of one version */
     char stamp[1100], mine[1100];
     join(stamp, sizeof stamp, out, "build/version.txt");
     join(mine, sizeof mine, rondo_tools_dir(), "version.txt");

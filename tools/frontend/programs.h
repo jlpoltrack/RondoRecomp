@@ -24,8 +24,9 @@
 #endif
 
 /* Two folders, the same one but on Linux's AppImage (tools/linux/AppRun, which sets
- * RONDO_APPIMAGE, RONDO_APPDIR and RONDO_HOME, each folder ending in a slash):
- * - the tools: Setup's programs, sdk/ and zig/ (in the AppImage: read-only);
+ * RONDO_APPIMAGE, RONDO_APPDIR and RONDO_HOME, each folder ending in a slash) and in the macOS
+ * app (tools/macos/launcher.c, which sets the last two):
+ * - the tools: Setup's programs, sdk/ and zig/ (in the AppImage or the app: read-only);
  * - home: where Setup builds the game (game/, build/, the game itself).
  * Elsewhere both are the folder of the running program. */
 static inline const char *rondo_env_dir(const char *name)
@@ -55,6 +56,16 @@ static inline const char *rondo_appimage(void)
 #endif
 }
 
+/* Portable mode is not offered in the macOS app: its own folder is read-only and signed */
+static inline bool rondo_portable_offered(void)
+{
+#ifdef __APPLE__
+    return !rondo_env_dir("RONDO_HOME");
+#else
+    return true;
+#endif
+}
+
 /* Portable mode (locate.h): the folder named user that the game keeps its profile in when it
  * is there, next to the game (on Linux's AppImage, next to the AppImage file, the game itself
  * being built in a folder of the player's); no separator at the end. */
@@ -78,6 +89,10 @@ static inline bool rondo_appdata_dir(char *out, size_t n)
     const char *a = SDL_getenv("APPDATA");
     if (!a || !*a) return false;
     snprintf(out, n, "%s\\RondoRecomp\\RondoRecomp\\", a);
+#elif defined(__APPLE__)
+    const char *h = SDL_getenv("HOME");
+    if (!h || !*h) return false;
+    snprintf(out, n, "%s/Library/Application Support/RondoRecomp/RondoRecomp/", h);
 #else
     const char *x = SDL_getenv("XDG_DATA_HOME"), *h = SDL_getenv("HOME");
     if (x && *x) snprintf(out, n, "%s/RondoRecomp/RondoRecomp/", x);

@@ -390,6 +390,13 @@ static bool update_tick(Menu *m)
     case UPD_IDLE: snprintf(m->upd[1], sizeof m->upd[1], "Check now asks GitHub for a newer version."); break;
     case UPD_CHECKING: snprintf(m->upd[1], sizeof m->upd[1], "Asking GitHub for the latest version..."); break;
     case UPD_LATEST: snprintf(m->upd[1], sizeof m->upd[1], "This is the latest version."); break;
+    case UPD_NEWER:
+        snprintf(m->upd[1], sizeof m->upd[1], "Version %s is out: download it from GitHub's releases page.",
+                 info->version);
+        snprintf(m->upd[2], sizeof m->upd[2], "%.150s", info->page);
+        snprintf(m->notice, sizeof m->notice, "Version %s is out  -  see Updates", info->version);
+        snprintf(m->upd_badge, sizeof m->upd_badge, "%s out", info->version);
+        break;
     case UPD_FAILED: snprintf(m->upd[1], sizeof m->upd[1], "Could not check for updates: %.110s", why); break;
     case UPD_AVAILABLE:
         snprintf(m->upd[1], sizeof m->upd[1], "Version %s is available: %.1f MB to download.", info->version,
@@ -407,6 +414,11 @@ static void update_install(Menu *m)
 {
     const UpdateInfo *info;
     UpdateState st = update_state(&info, NULL);
+    if (st == UPD_NEWER) {   /* no package for this system: its release page instead */
+        if (SDL_OpenURL(info->page)) snprintf(m->status, sizeof m->status, "Download version %s from its release page.", info->version);
+        else snprintf(m->status, sizeof m->status, "Cannot open a web browser: %.80s", SDL_GetError());
+        return;
+    }
     if (!menu_on_start_screen(m)) {
         snprintf(m->status, sizeof m->status, "Leave the game for the start screen first.");
         return;
@@ -847,8 +859,9 @@ int main(int argc, char **argv)
                 snprintf(t_upd_shot_path, sizeof t_upd_shot_path, "%s/update_start_screen.bmp", update_dir);
                 pending = "Updates";
                 t_upd_phase = 1;
-            } else if (t_upd_phase == 0 && (ust == UPD_LATEST || ust == UPD_FAILED || t_upd_loops > 3600)) {
-                TLOG("autotest-update: NO UPDATE FOUND (%s)\n", ust == UPD_FAILED ? uwhy : ust == UPD_LATEST ? "latest" : "timeout");
+            } else if (t_upd_phase == 0 && (ust == UPD_LATEST || ust == UPD_NEWER || ust == UPD_FAILED || t_upd_loops > 3600)) {
+                TLOG("autotest-update: NO UPDATE FOUND (%s)\n", ust == UPD_FAILED ? uwhy : ust == UPD_LATEST ? "latest"
+                                                                : ust == UPD_NEWER ? "newer, no package" : "timeout");
                 running = false;
             } else if (t_upd_phase == 1 && t_upd_loops > 60) {
                 snprintf(t_upd_shot_path, sizeof t_upd_shot_path, "%s/update_page.bmp", update_dir);

@@ -7,7 +7,7 @@ Static recompilation of *Castlevania: Rondo of Blood* (PC Engine Super CD-ROM²)
 
 ## Supported Platforms
 
-Currently Windows, Linux x86 (Steam Deck).
+Currently Windows, Linux x86 (Steam Deck), macOS (Apple silicon).
 
 > If you want support for a different platform and want to contribute, please feel free to put in a pull request to add that support in.
 
@@ -83,7 +83,7 @@ Findings so far: [docs/findings.md](docs/findings.md).
   records unlocks as softcore, doesn't keep leaderboard entries, and shows a "Warning: Unknown
   Emulator" notice when the game starts. The game then says "softcore only".
 - Windows and Linux (x86-64, glibc 2.35 or newer: the Steam Deck, Ubuntu 22.04, Debian 12,
-  Fedora 36, Arch and later).
+  Fedora 36, Arch and later), and macOS 15 or newer on Apple silicon.
 - Setup takes the disc image zipped, as a 7z, unzipped or as a `.chd` (MAME's compressed CD
   format, which the game reads as it is: about half the space; see
   [docs/distribution.md](docs/distribution.md#chd)), or the Virtual Console releases:
@@ -97,8 +97,9 @@ Findings so far: [docs/findings.md](docs/findings.md).
 ## For players
 
 Download the release (`RondoRecomp-<version>-windows-x64.zip`, or
-`RondoRecomp-<version>-x86_64.AppImage` for Linux and the Steam Deck), run
-`RondoRecomp Setup` (on Linux, the AppImage), choose your own disc image (zipped, or the
+`RondoRecomp-<version>-x86_64.AppImage` for Linux and the Steam Deck,
+`RondoRecomp-<version>-macos-arm64.dmg` for a Mac), run
+`RondoRecomp Setup` (on Linux, the AppImage; on a Mac, RondoRecomp in Applications), choose your own disc image (zipped, or the
 folder it is unzipped in) or Virtual Console release, then click Play. On the Steam Deck, add the AppImage to Steam as a
 non-Steam game. See [docs/PLAYER_README.txt](docs/PLAYER_README.txt) and
 [docs/distribution.md](docs/distribution.md).
